@@ -1,0 +1,310 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<title>The SwitchBlades ULTIMATE Word Party</title>
+<style>
+  :root{
+    --gap: 18px;
+    --card-radius: 14px;
+    --ui-bg: #0b0b0b;
+    --ui-fg: #ffffff;
+  }
+  html,body{height:100%;margin:0;font-family:Inter, system-ui, -apple-system, "Helvetica Neue", Arial;}
+  body{
+    background: linear-gradient(180deg,#070707 0%, #111111 100%);
+    color:var(--ui-fg);
+    display:flex;align-items:center;justify-content:center;
+    padding:20px;
+  }
+
+  .app {
+    width:100%;
+    max-width:520px;
+    text-align:center;
+  }
+
+  header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+  h1{font-size:18px;margin:0;font-weight:700;letter-spacing:0.6px}
+  .controls{display:flex;gap:8px}
+  .btn{
+    background:#222;border:0;color:white;padding:8px 12px;border-radius:8px;font-weight:600;
+    box-shadow:0 2px 8px rgba(0,0,0,0.5);
+  }
+  .btn:active{transform:translateY(1px)}
+
+  /* Card area */
+  .card-stage{
+    position:relative;height:60vh;min-height:320px;
+    display:flex;align-items:center;justify-content:center;
+    margin-bottom:14px;
+  }
+
+  .card{
+    width:100%;
+    height:100%;
+    border-radius:var(--card-radius);
+    display:flex;align-items:center;justify-content:center;
+    box-shadow:0 8px 30px rgba(0,0,0,0.6);
+    transition:transform .28s ease, opacity .28s ease;
+    padding:28px;
+    user-select:none;
+    -webkit-user-select:none;
+    touch-action:manipulation;
+  }
+
+  .word{
+    font-size:46px;
+    font-weight:800;
+    text-transform:uppercase;
+    text-align:center;
+    line-height:1.05;
+    padding:8px 18px;
+    word-break:break-word;
+  }
+
+  /* color themes requested */
+  .theme-1{ background:#d62828; color:#fff; } /* red bg white text */
+  .theme-2{ background:#ffd400; color:#000; } /* yellow bg black text */
+  .theme-3{ background:linear-gradient(180deg,#001f3f 0,#001833 100%); color:#ff7f11; } /* orange text on navy background - simulate orange on top of navy */
+
+  /* small footer info */
+  .meta{display:flex;justify-content:space-between;align-items:center;font-size:13px;color:#aaa}
+  .meta .left{opacity:0.9}
+  .meta .right button{background:transparent;border:0;color:#8f8f8f;font-weight:700}
+
+  /* animate removal */
+  .removed{transform:translateY(-18px) scale(.96);opacity:0;pointer-events:none}
+
+  /* bottom area */
+  .toolbar{display:flex;gap:10px;justify-content:center;margin-top:12px}
+  .chip{background:#111;padding:8px 12px;border-radius:999px;font-weight:700;color:#ddd}
+  .big{
+    font-size:15px;padding:14px 18px;border-radius:12px;
+  }
+
+  @media (max-width:420px){
+    .word{font-size:32px}
+    .card-stage{height:56vh}
+  }
+
+</style>
+</head>
+<body>
+  <div class="app" role="application" aria-label="The SwitchBlades Word Party">
+    <header>
+      <h1>The SwitchBlades Word Party</h1>
+      <div class="controls">
+        <button id="shuffleBtn" class="btn">Shuffle</button>
+        <button id="resetBtn" class="btn">Reset</button>
+      </div>
+    </header>
+
+    <main>
+      <div class="card-stage" id="stage" aria-live="polite">
+        <!-- card injected by JS -->
+      </div>
+
+      <div class="toolbar">
+        <div class="chip" id="remaining">40 words left</div>
+        <button id="skipBtn" class="btn big">Skip</button>
+        <button id="timerBtn" class="btn big">Timer ⏱</button>
+      </div>
+
+      <div style="height:12px"></div>
+      <div class="meta">
+        <div class="left">Tap the word to mark performed — it will be removed.</div>
+        <div class="right"><button id="helpBtn">Help</button></div>
+      </div>
+    </main>
+  </div>
+
+<script>
+/*
+  The SwitchBlades Word Party - Single page
+  - 40 words (example list)
+  - Fisher-Yates shuffle
+  - Tap to mark performed (removes from deck)
+  - Skip, Shuffle, Reset, Timer toggle (30s)
+*/
+
+// 40 example simple words (you can replace any or load remotely)
+const WORDS = [
+  "Love", "Dance", "Sunrise", "Coffee", "Laugh", "Robot", "Pirate", "Rain",
+  "Magic", "Telephone", "Guitar", "Train", "Mirror", "Secret", "Pizza", "Moon",
+  "Police", "Banana", "Superhero", "Taxi", "Ghost", "Teacher", "Castle", "Rocket",
+  "Computer", "Bird", "Fireworks", "Library", "Basketball", "Camera", "Kite",
+  "Wizard", "Elephant", "Ship", "Mountain", "Chef", "Doctor", "Alien", "Jungle",
+  "Clock", "Clown"
+];
+
+// Copy array to mutable deck
+let deck = WORDS.slice();
+let currentIndex = 0;
+let timerActive = false;
+let timerHandle = null;
+let countdown = 30;
+
+// DOM refs
+const stage = document.getElementById('stage');
+const remainingChip = document.getElementById('remaining');
+const shuffleBtn = document.getElementById('shuffleBtn');
+const resetBtn = document.getElementById('resetBtn');
+const skipBtn = document.getElementById('skipBtn');
+const timerBtn = document.getElementById('timerBtn');
+const helpBtn = document.getElementById('helpBtn');
+
+// Fisher-Yates shuffle (uniform)
+function shuffleArray(a){
+  for (let i = a.length - 1; i > 0; i--){
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+// pick a theme class in sequence 1-2-3 for visual variety (or random)
+function pickTheme(i){
+  const pick = i % 3;
+  if (pick === 0) return 'theme-1';
+  if (pick === 1) return 'theme-2';
+  return 'theme-3';
+}
+
+// render current top card
+function renderCard(){
+  stage.innerHTML = '';
+  if (deck.length === 0){
+    const doneEl = document.createElement('div');
+    doneEl.className = 'card';
+    doneEl.innerHTML = '<div class="word">All done 🎉</div>';
+    stage.appendChild(doneEl);
+    updateRemaining();
+    return;
+  }
+  // show top of deck
+  const word = deck[0];
+  const card = document.createElement('div');
+  card.className = 'card ' + pickTheme(Math.floor(Math.random()*100));
+  card.setAttribute('role','button');
+  card.setAttribute('aria-label','Perform: ' + word);
+  const w = document.createElement('div');
+  w.className = 'word';
+  w.textContent = word;
+  card.appendChild(w);
+
+  // tapped or clicked -> mark done
+  card.addEventListener('click', () => markDone(card));
+  // also support keyboard Enter
+  card.addEventListener('keydown', (e)=>{
+    if (e.key === 'Enter' || e.key ===' ') markDone(card);
+  });
+  stage.appendChild(card);
+  updateRemaining();
+}
+
+function markDone(card){
+  // animate then remove from deck
+  card.classList.add('removed');
+  setTimeout(()=>{
+    deck.shift(); // remove top
+    renderCard();
+  }, 240);
+  stopTimer();
+}
+
+// skip (move top to bottom)
+skipBtn.addEventListener('click', ()=>{
+  if (deck.length <= 1) return;
+  deck.push(deck.shift());
+  renderCard();
+  stopTimer();
+});
+
+// shuffle button
+shuffleBtn.addEventListener('click', ()=>{
+  deck = shuffleArray(deck);
+  renderCard();
+  stopTimer();
+});
+
+// reset button
+resetBtn.addEventListener('click', ()=>{
+  deck = WORDS.slice();
+  deck = shuffleArray(deck);
+  renderCard();
+  stopTimer();
+});
+
+// timer toggle (simple 30s timer)
+timerBtn.addEventListener('click', ()=>{
+  if (!timerActive){
+    startTimer(30);
+  } else {
+    stopTimer();
+  }
+});
+
+helpBtn.addEventListener('click', ()=>{
+  alert('Pass the phone to the performer. They tap the word and perform it. When done, tap the card again to mark it performed and remove it. Use Skip to pass the word, Shuffle to reshuffle remaining words, Reset to restore the deck.');
+});
+
+function startTimer(seconds){
+  countdown = seconds || 30;
+  timerActive = true;
+  timerBtn.textContent = 'Stop ⏱';
+  updateRemaining();
+  timerHandle = setInterval(()=>{
+    countdown--;
+    if (countdown <= 0){
+      stopTimer();
+      // auto-skip when time is up (visual cue)
+      const top = stage.querySelector('.card');
+      if (top){
+        top.classList.add('removed');
+        setTimeout(()=>{ deck.shift(); renderCard(); }, 240);
+      }
+      return;
+    }
+    updateRemaining();
+  }, 1000);
+}
+
+function stopTimer(){
+  timerActive = false;
+  timerBtn.textContent = 'Timer ⏱';
+  if (timerHandle) { clearInterval(timerHandle); timerHandle = null; }
+  updateRemaining();
+}
+
+// update remaining chip
+function updateRemaining(){
+  const rem = deck.length;
+  if (deck.length === 0){
+    remainingChip.textContent = '0 words left';
+    return;
+  }
+  if (timerActive){
+    remainingChip.textContent = `${rem} left • ${countdown}s`;
+  } else {
+    remainingChip.textContent = `${rem} words left`;
+  }
+}
+
+// on load: shuffle and render
+document.addEventListener('DOMContentLoaded', ()=>{
+  deck = shuffleArray(deck);
+  renderCard();
+});
+
+// keyboard support: space to mark done
+document.addEventListener('keydown', (e)=>{
+  if (e.code === 'Space'){
+    const card = stage.querySelector('.card');
+    if (card) markDone(card);
+  }
+});
+</script>
+</body>
+</html>
